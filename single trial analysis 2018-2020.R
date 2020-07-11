@@ -11,7 +11,7 @@ data<- read.csv('All 2018-2020 data as of July 9 2020.csv', as.is=TRUE)
 #function to check model convergence and update until converged (tolerate a 1.5% change in components)
 mkConv<- function(mod){
   pctchg<- summary(mod)$varcomp[,c('%ch')]
-  while(any(pctchg >1.5)){
+  while(any(pctchg >2)){
     mod<-suppressWarnings(update(mod))
   }
   return(mod)
@@ -37,40 +37,56 @@ addRows<- function(df, varNm, vec){
   return(df)
 }
 
-#function to get error co-variance matrix
-getEcov<- function(mod){  
-  vc<- summary(mod)$varcomp
-  g<- vc[-c(1:which(row.names(vc)=='units:trait!R')),]
-  g<- cbind(data.frame(t(matrix(unlist(strsplit(matrix(unlist(strsplit(row.names(g), split="trait_")), nrow=2)[2,], split=":")), nrow=2))), g)
-  m1<- cast(g, X1~X2, value='component')[,-1]
-  m1<- as.matrix(m1)
-  m2<- cast(g, X2~X1, value='component')[,-1]
-  m2<- as.matrix(m2)
-  vcovE<- ifelse(is.na(m1), ifelse(is.na(m2), NA, m2), ifelse(is.na(m2), m1, m1 + m2))
-  labs<- cast(g, X1~X2, value='component')[,1]
-  colnames(vcovE)<- labs
-  row.names(vcovE)<- labs
-  return(vcovE) 
+#convert yld to bu/acre
+convYld<- function(y){
+  x<- y/c(60 * 0.453592 * 2.47105)
+  return(x)
 }
+
+#convert tw to lbs/bu
+convTwt<- function(y){
+  x<- y/1000 *2.2046 *35.2391
+  return(x)
+}  
 
 ############################
 ## Data curation
 ############################
 
-#treat prelims as one trial with separate blocks
-#get study names for the prelims
-studgrpExp<- c("Pr[0-9]_Urb_19","Pr[0-9]_Scb_19","Pr[0-9]_Car_19","Pr[0-9]_Stj_19")
+#treat prelims from before 2020 as one trial with separate blocks in the un-replicated sites
+studgrpExp<- c("Pr[0-9]_Car_19","Pr[0-9]_Stj_19","Pr[0-9]_Car_18","Pr[0-9]_Stj_18","Pr[0-9]_Neo_18")
+for(x in 1:length(studgrpExp)){
+  
+  #get the study names and row positions of the study group
+  studGrp<- unique(data[grep(c(studgrpExp[x]), data$studyName),'studyName'])
+  ixgrp<- which(data$studyName %in% studGrp)
+  stdNms<- data[ixgrp,'studyName']
+  
+  #make block the prelim number
+  block<- matrix(unlist(strsplit(stdNms, split="_")), nrow=3)[1,]
+  data[ixgrp,'blockNumber']<- block
+  data[ixgrp,'studyName']<- studgrpExp[x]
+  
+  #determine checks and change entryType info
+  cks<- attr(which(table(data[ixgrp,'germplasmName'])>1), 'names')
+  ixgrpCk<- ixgrp[which(data[ixgrp, 'germplasmName'] %in% cks)]
+  data[ixgrpCk, 'entryType']<- 'check'
+  
+  #edit design info
+  data[ixgrp,'studyDesign']<- 'Augmented RCBD'
+}
 
-studGrp<- unique(data[grep(c(studgrpExp[x]), data$studyName),'studyName'])
-studGrp<-unique(data[grep(c(studgrpExp[x]), data$studyName),'studyName'])
-studGrp<-unique(data[grep(c(studgrpExp[x]), data$studyName),'studyName'])
-studGrp<-unique(data[grep(c(studgrpExp[x]), data$studyName),'studyName'])
+#edit entry type and design info for the Augmented trials
+ixAug<- grep('Aug', data$studyName)
+ixAugCk<- which(data[ixAug,'germplasmName'] %in% c("Kaskaskia", "07-4415"))
+data[ixAugCk, 'entryType']<- 'check'
+data[ixAug,'studyDesign']<- 'Augmented RCBD'
 
-
-#add column for check
-#pheno<- data.frame(pheno, check="0", stringsAsFactors = FALSE)
-#pheno[which(pheno$germplasmName=='07-4415'),'check']<- '1'
-#pheno[which(pheno$germplasmName=='Kaskaskia'),'check']<- '1'
+#convert yield and test weight to common units
+data[,'Grain.yield...kg.ha.CO_321.0001218']<- convYld(data[,'Grain.yield...kg.ha.CO_321.0001218'])
+data[,'Grain.test.weight...g.l.CO_321.0001210']<- convTwt(data[,'Grain.test.weight...g.l.CO_321.0001210'])
+colnames(data)<- gsub('kg.ha.CO_321.0001218', "bu.ac", colnames(data))
+colnames(data)<- gsub('g.l.CO_321.0001210', "lbs.bu", colnames(data))
 
 ############################
 ##Subset each trial
@@ -123,7 +139,13 @@ for(i in 1:length(stdnms)){
   }
   #add the blocking factor if any
   if(minBlkno>1 & minBlkno<5){
-    fxform<- paste(fxform, "block", sep="+")
+    fxform<- paste(fxform, "blockNumber", sep="+")
+    #for augmented designs use the checks to estimate the block effect
+    if(trl$studyDesign[1]=='Augmented RCBD'){ 
+      fxform<- paste(fxform, "at(entryType, 'check'):blockNumber", sep="+")
+    }else{
+      fxform<- paste(fxform, "blockNumber", sep="+")
+    }
   }
   #convert to formula
   fxform<- as.formula(fxform)
@@ -134,10 +156,10 @@ for(i in 1:length(stdnms)){
   rform<-NA
   #add the blocking factor if any
   if(minBlkno>=5){
-    rform<- "~block"
+    rform<- "~blockNumber"
     #for augmented designs use the checks to estimate the block effect
-    if(stdnms[i] %in% stdnmsAug){ 
-      rform<- "~at(check, '1'):block"
+    if(trl$studyDesign[1]=='Augmented RCBD'){ 
+      rform<- "~at(entryType, 'check'):blockNumber"
     }
     rform<- as.formula(rform)
   }
@@ -146,7 +168,7 @@ for(i in 1:length(stdnms)){
   ## Convert variables to factors
   #############################
   trl$germplasmDbId<- as.factor(as.character(trl$germplasmDbId))
-  trl$block<- as.factor(as.character(trl$block))
+  trl$blockNumber<- as.factor(as.character(trl$blockNumber))
   
   #################################
   ## Fit model and extract results
@@ -158,8 +180,10 @@ for(i in 1:length(stdnms)){
     mod<- suppressWarnings(asreml(fixed=fxform, data=trl, trace=FALSE))
   }
   mod<- mkConv(mod)
+  
   p<- suppressWarnings(predictPlus(mod, classify = clasfy, meanLSD.type='factor.combination', LSDby = 'trait'))
   blues<- p$predictions
+  diag(getEcov(mod))
 
   #compute the LSD
   LSDs<- p$LSD[,'meanLSD']
@@ -171,13 +195,14 @@ for(i in 1:length(stdnms)){
   if(stdnms[i] %in% stdnmsCoop){
     #################################
     ## create basic single trial analysis summary table 
+    ## Not very useful for selection, but some people like to see it
     #################################
     #means
     smryA<- cast(df, studyName+germplasmDbId~trait, value='predicted.value')
-    Means<- colMeans(smryA[,-c(1:2)])
+    Means<- colMeans(smryA[,-c(1:2)], na.rm=TRUE)
     #standard errors
     smryB<- cast(df, studyName+germplasmDbId~trait, value='standard.error')
-    MSE<- colMeans(smryB[,-c(1:2)])
+    SE<- colMeans(smryB[,-c(1:2)], na.rm=T)
     #trial metadata
     metaCols<- c("studyName", "studyDescription", "studyYear", "studyDesign", "locationName", "germplasmName","germplasmDbId")
     meta<- trl[match(smryA$germplasmDbId, trl$germplasmDbId),metaCols]
@@ -188,9 +213,9 @@ for(i in 1:length(stdnms)){
     
     #add means, MSE, LSD, and CV
     df2<- addRows(df2, "MEAN", Means)
-    df2<- addRows(df2, "MSE", MSE)
+    df2<- addRows(df2, "SE", SE)
     df2<- addRows(df2, "LSD", LSDs)
-    df2<- addRows(df2, "CV", MSE/Means *100)
+    df2<- addRows(df2, "CV", SE/Means *100)
     df2[,-c(1:7)]<- round(df2[,-c(1:7)],3)
     
     #write to an excel sheet
