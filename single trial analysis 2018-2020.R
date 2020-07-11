@@ -13,6 +13,7 @@ mkConv<- function(mod){
   pctchg<- summary(mod)$varcomp[,c('%ch')]
   while(any(pctchg >2)){
     mod<-suppressWarnings(update(mod))
+    pctchg<- summary(mod)$varcomp[,c('%ch')]
   }
   return(mod)
 }
@@ -28,12 +29,12 @@ selectTraitcols<- function(trl, trtnms, thresh=0.2){
 }
 
 #function to add means, MSE, LSD, and CV
-addRows<- function(df, varNm, vec){
+addRows<- function(df, varNm, label, vec){
   lenvec<- length(vec)
   df[nrow(df)+1,]<-df[nrow(df),]
-  df[nrow(df), c(1:(lenvec+1))]<- rep("", lenvec+1)
-  df[nrow(df), lenvec+2]<- varNm
-  df[nrow(df), -c(1:(lenvec+2))]<- round(vec, 5)
+  df[nrow(df), c(1:varNm)]<- rep("", varNm)
+  df[nrow(df), varNm]<- label
+  df[nrow(df), -c(1:varNm)]<- round(vec, 5)
   return(df)
 }
 
@@ -93,7 +94,7 @@ colnames(data)<- gsub('g.l.CO_321.0001210', "lbs.bu", colnames(data))
 ############################
 
 #get unique study names
-stdnms<- unique(data$studyName) 
+stdnms<- unique(data$studyName)[56:61] 
 
 #indicate which require a single trial analysis summary file
 stdnmsCoop<- stdnms[grep(c("A6S|P6S|SU|UE|VT"), stdnms)]
@@ -173,6 +174,7 @@ for(i in 1:length(stdnms)){
   #################################
   ## Fit model and extract results
   #################################
+
   if(uvvmv=='MV'){
     mod<- suppressWarnings(asreml(fixed=fxform, residual=~id(units):us(trait), data=trl, trace=FALSE))
   }
@@ -183,7 +185,7 @@ for(i in 1:length(stdnms)){
   
   p<- suppressWarnings(predictPlus(mod, classify = clasfy, meanLSD.type='factor.combination', LSDby = 'trait'))
   blues<- p$predictions
-  diag(getEcov(mod))
+
 
   #compute the LSD
   LSDs<- p$LSD[,'meanLSD']
@@ -212,11 +214,13 @@ for(i in 1:length(stdnms)){
     df2[,c(1:7)] <- lapply(df2[,c(1:7)], as.character)
     
     #add means, MSE, LSD, and CV
-    df2<- addRows(df2, "MEAN", Means)
-    df2<- addRows(df2, "SE", SE)
-    df2<- addRows(df2, "LSD", LSDs)
-    df2<- addRows(df2, "CV", SE/Means *100)
+    df2<- addRows(df2, 7, "MEAN", Means)
+    df2<- addRows(df2, 7, "SE", SE)
+    df2<- addRows(df2, 7, "LSD", LSDs)
+    df2<- addRows(df2, 7, "CV", SE/Means *100)
     df2[,-c(1:7)]<- round(df2[,-c(1:7)],3)
+    
+
     
     #write to an excel sheet
     excellist<- list(results=df2, rawdata=trl)
