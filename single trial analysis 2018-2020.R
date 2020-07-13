@@ -8,10 +8,16 @@ data<- read.csv('All 2018-2020 data as of July 9 2020.csv', as.is=TRUE)
 ##Functions to be used later
 ############################
 
+#mode
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
 #function to check model convergence and update until converged (tolerate a 1.5% change in components)
 mkConv<- function(mod){
   pctchg<- summary(mod)$varcomp[,c('%ch')]
-  while(any(pctchg >2)){
+  while(any(pctchg >2, na.rm=TRUE)){
     mod<-suppressWarnings(update(mod))
     pctchg<- summary(mod)$varcomp[,c('%ch')]
   }
@@ -55,7 +61,7 @@ convTwt<- function(y){
 ############################
 
 #treat prelims from before 2020 as one trial with separate blocks in the un-replicated sites
-studgrpExp<- c("Pr[0-9]_Car_19","Pr[0-9]_Stj_19","Pr[0-9]_Car_18","Pr[0-9]_Stj_18","Pr[0-9]_Neo_18")
+studgrpExp<- c("Pr[0-9]_Car_19","Pr[0-9]_Stj_19","Pr[0-9]_Rid_18","Pr[0-9]_Stj_18")
 for(x in 1:length(studgrpExp)){
   
   #get the study names and row positions of the study group
@@ -70,8 +76,8 @@ for(x in 1:length(studgrpExp)){
   
   #determine checks and change entryType info
   cks<- attr(which(table(data[ixgrp,'germplasmName'])>1), 'names')
-  ixgrpCk<- ixgrp[which(data[ixgrp, 'germplasmName'] %in% cks)]
-  data[ixgrpCk, 'entryType']<- 'check'
+  ixgrpCk<- which(data[ixgrp, 'germplasmName'] %in% cks)
+  data[ixgrp,'entryType'][ixgrpCk]<- 'check'
   
   #edit design info
   data[ixgrp,'studyDesign']<- 'Augmented RCBD'
@@ -80,7 +86,7 @@ for(x in 1:length(studgrpExp)){
 #edit entry type and design info for the Augmented trials
 ixAug<- grep('Aug', data$studyName)
 ixAugCk<- which(data[ixAug,'germplasmName'] %in% c("Kaskaskia", "07-4415"))
-data[ixAugCk, 'entryType']<- 'check'
+data[ixAug,][ixAugCk, 'entryType']<- 'check'
 data[ixAug,'studyDesign']<- 'Augmented RCBD'
 
 #convert yield and test weight to common units
@@ -89,18 +95,25 @@ data[,'Grain.test.weight...g.l.CO_321.0001210']<- convTwt(data[,'Grain.test.weig
 colnames(data)<- gsub('kg.ha.CO_321.0001218', "bu.ac", colnames(data))
 colnames(data)<- gsub('g.l.CO_321.0001210', "lbs.bu", colnames(data))
 
+#shorten the trait names to avoid errors in model fitting
+ixCOs<- grep('CO_', colnames(data))
+colnames(data)[ixCOs]<- matrix(unlist(strsplit(colnames(data)[ixCOs], split="CO_")), nrow=2)[1,]
+
 ############################
 ##Subset each trial
 ############################
 
 #get unique study names
-stdnms<- unique(data$studyName)[56:61] 
+stdnms<- unique(data$studyName)
 
 #indicate which require a single trial analysis summary file
 stdnmsCoop<- stdnms[grep(c("A6S|P6S|SU|UE|VT"), stdnms)]
 
 #indicate which have an augmented design
 stdnmsAug<- stdnms[grep(c("Aug"), stdnms)]
+
+#exclude augmented studies for now
+stdnms<- setdiff(stdnms, stdnmsAug)
 
 for(i in 1:length(stdnms)){
   
@@ -113,6 +126,11 @@ for(i in 1:length(stdnms)){
   
   #get vector of all possible traits
   trtnms<- colnames(data)[c(41:ncol(data)-1)]
+  
+  #exclude milling and baking traits as possible traits
+  trtnms<-setdiff(trtnms, c("Flour.protein.content.....","Flour.yield.score.....",
+          "Grain.hardness...skcs.index.","Lactic.Acid.SRC.score.....",
+          "Softness.equivalent.score.....","Sucrose.SRC.score.....")) 
   
   #vector of traits used in the selected trial
   ttrt<- selectTraitcols(trl, trtnms)
@@ -129,18 +147,18 @@ for(i in 1:length(stdnms)){
     clasfy<- 'germplasmDbId:trait'
   }
   
+
   #############################
   ## Create the fixed formula
   #############################
   if(uvvmv== "UV"){
-    fxform<- paste(ttrt, "~1", sep="")
+    fxform<- paste(ttrt, "~1+germplasmDbId", sep="")
   }
   if(uvvmv== "MV"){
     fxform<- paste('cbind(', paste(ttrt, collapse=", "), ")~1+trait+us(trait):germplasmDbId", sep="")
   }
   #add the blocking factor if any
-  if(minBlkno>1 & minBlkno<5){
-    fxform<- paste(fxform, "blockNumber", sep="+")
+  if(minBlkno>1 & minBlkno<4){
     #for augmented designs use the checks to estimate the block effect
     if(trl$studyDesign[1]=='Augmented RCBD'){ 
       fxform<- paste(fxform, "at(entryType, 'check'):blockNumber", sep="+")
@@ -148,6 +166,7 @@ for(i in 1:length(stdnms)){
       fxform<- paste(fxform, "blockNumber", sep="+")
     }
   }
+
   #convert to formula
   fxform<- as.formula(fxform)
   
@@ -156,7 +175,7 @@ for(i in 1:length(stdnms)){
   #############################
   rform<-NA
   #add the blocking factor if any
-  if(minBlkno>=5){
+  if(minBlkno>=4){
     rform<- "~blockNumber"
     #for augmented designs use the checks to estimate the block effect
     if(trl$studyDesign[1]=='Augmented RCBD'){ 
@@ -170,29 +189,61 @@ for(i in 1:length(stdnms)){
   #############################
   trl$germplasmDbId<- as.factor(as.character(trl$germplasmDbId))
   trl$blockNumber<- as.factor(as.character(trl$blockNumber))
+  trl$entryType<- as.factor(as.character(trl$entryType))
   
   #################################
   ## Fit model and extract results
   #################################
 
   if(uvvmv=='MV'){
-    mod<- suppressWarnings(asreml(fixed=fxform, residual=~id(units):us(trait), data=trl, trace=FALSE))
+    if(class(rform)=='logical'){
+      mod<- suppressWarnings(asreml(fixed=fxform, residual=~id(units):us(trait), data=trl, trace=FALSE, aom=T))
+    }else{
+      mod<- suppressWarnings(asreml(fixed=fxform, random=rform, residual=~id(units):us(trait), data=trl, trace=FALSE, aom=T))
+    }
+    mod<- mkConv(mod)
+    p<- suppressWarnings(predictPlus(mod, classify = clasfy, meanLSD.type='factor.combination', LSDby = 'trait'))
+
   }
   if(uvvmv=='UV'){
-    mod<- suppressWarnings(asreml(fixed=fxform, data=trl, trace=FALSE))
+    if(class(rform)=='logical'){
+      mod<- suppressWarnings(asreml(fixed=fxform, data=trl, trace=FALSE, aom=T))
+    }else{
+      mod<- suppressWarnings(asreml(fixed=fxform, random=rform, data=trl, trace=FALSE, aom=T))
+    }
+    mod<- mkConv(mod)
+    p<- suppressWarnings(predictPlus(mod, classify = clasfy))
+
   }
-  mod<- mkConv(mod)
-  
-  p<- suppressWarnings(predictPlus(mod, classify = clasfy, meanLSD.type='factor.combination', LSDby = 'trait'))
   blues<- p$predictions
-
-
+  
   #compute the LSD
   LSDs<- p$LSD[,'meanLSD']
   names(LSDs)<- row.names(p$LSD)
   
   #add study name to the blues table
   df<- data.frame(studyName=stdnms[i], blues)
+  
+  if(uvvmv=='UV'){
+    df<- data.frame(studyName=stdnms[i], trait=ttrt, blues)
+    df<- df[,c(1,3,2, 4:ncol(df))]
+  }
+  if(uvvmv=='MV'){
+    df<- data.frame(studyName=stdnms[i], blues)
+  }
+  
+  #get residuals
+  jpeg(file=paste(stdnms[i], "-residuals.jpeg", sep=""))
+  resids<- resid(mod, type="stdCond")
+  plot(resid(mod, type="stdCond"), main=stdnms[i])
+  dev.off()
+  
+  #make potential outlier table
+  mltTrl<- melt(trl, id.vars=c('observationUnitName','germplasmDbId'), measure.vars=ttrt)
+  mltTrl<-mltTrl[order(mltTrl$variable),]
+  mltTrl<-mltTrl[order(mltTrl$observationUnitName),]
+  residsTab<- cbind(mltTrl, resids)
+  outTab<- residsTab[which(sqrt(resids^2)>3),]
   
   if(stdnms[i] %in% stdnmsCoop){
     #################################
@@ -232,10 +283,15 @@ for(i in 1:length(stdnms)){
   #################################    
   if(i==1){
     dfall<- df
+    outTabs<- outTab
   }else{
     dfall<- rbind(dfall, df)
+    outTabs<- rbind(outTabs, outTab)
   } 
 }
+
+write.csv(dfall, file='predicted values table.csv')
+write.csv(outTabs, file='possible outliers.csv')
 
 
 
