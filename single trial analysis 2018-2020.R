@@ -2,7 +2,20 @@ setwd("~/Documents/GitHub/Wheat-Selection-Decisons-2020")
 library(asreml)
 library(asremlPlus)
 library(reshape)
-data<- read.csv('All 2018-2020 data as of July 9 2020.csv', as.is=TRUE)
+data<- read.csv('All 2018-2020 data as of July 21 2020.csv', as.is=TRUE)
+
+############################
+##Data corrections
+############################
+
+pltsGy<- c('AdvHY_Urb_20-plot20162', 'AdvHY_Urb_20-plot30106', 'Adv_Neo_18-plot1095',
+'Adv_Neo_18-plot1097', 'Adv_Neo_18-plot1120', 'Adv_Neo_20-plot267',
+'Adv_Neo_20-plot340', 'Adv_StJ_20-plot118', 'Adv_StJ_20-plot139', 'Adv_StJ_20-plot511')
+data[which(data$observationUnitName %in% pltsGy), "Grain.yield...kg.ha.CO_321.0001218"]<- NA
+
+pltsTw<- c('Adv_Neo_18-plot1024', 'Adv_Neo_18-plot1073', 'Adv_Neo_18-plot1120', 'Adv_Neo_18-plot2001',
+'Adv_Neo_18-plot2021', 'Adv_Neo_18-plot2045', 'Adv_Neo_20-plot565', 'Pr_Car_20-plot135')
+data[which(data$observationUnitName %in% pltsTw), "Grain.test.weight...g.l.CO_321.0001210"]<- NA
 
 ############################
 ##Functions to be used later
@@ -127,10 +140,22 @@ for(i in 1:length(stdnms)){
   #get vector of all possible traits
   trtnms<- colnames(data)[c(41:ncol(data)-1)]
   
-  #exclude milling and baking traits as possible traits
+  #exclude plots with low plant stands
+  ps<- trl[,'Plant.stand...0.9.density.scale.']
+  if(any(ps<5, na.rm=T)){
+    trl<- trl[-which(ps<5),]
+  }
+  #exclude plots with high frost damage
+  #ps<- trl[,'Frost.damage...0.3.injury.scale.']
+  #if(any(ps>2, na.rm=T)){
+  #  trl<- trl[-which(ps>2),]
+  #}
+  
+  #exclude milling and baking traits and plant stand as response variables
   trtnms<-setdiff(trtnms, c("Flour.protein.content.....","Flour.yield.score.....",
           "Grain.hardness...skcs.index.","Lactic.Acid.SRC.score.....",
-          "Softness.equivalent.score.....","Sucrose.SRC.score.....")) 
+          "Softness.equivalent.score.....","Sucrose.SRC.score.....",
+          'Plant.stand...0.9.density.scale.')) 
   
   #vector of traits used in the selected trial
   ttrt<- selectTraitcols(trl, trtnms)
@@ -138,7 +163,7 @@ for(i in 1:length(stdnms)){
   #check if there is blocking for the traits measured
   minBlkno<- length(unique(na.omit(trl[,c('blockNumber', ttrt)])$blockNumber))
   
-  #single-trait or multi-trait model?
+  #single-trait or multitrait model?
   if(length(ttrt)==1){
     uvvmv<- "UV"
     clasfy<- 'germplasmDbId'
@@ -199,10 +224,10 @@ for(i in 1:length(stdnms)){
     if(class(rform)=='logical'){
       mod<- suppressWarnings(asreml(fixed=fxform, residual=~id(units):us(trait), data=trl, trace=FALSE, aom=T))
     }else{
-      mod<- suppressWarnings(asreml(fixed=fxform, random=rform, residual=~id(units):us(trait), data=trl, trace=FALSE, aom=T))
+      mod<- suppressWarnings(asreml(fixed=fxform, random=rform, residual=~id(units):us(trait), data=trl, trace=FALSE, aom=T, workspace=64e6))
     }
     mod<- mkConv(mod)
-    p<- suppressWarnings(predictPlus(mod, classify = clasfy, meanLSD.type='factor.combination', LSDby = 'trait'))
+    p<- suppressWarnings(predictPlus(mod, classify = clasfy, meanLSD.type='factor.combination', LSDby = 'trait', pworkspace=64e8))
 
   }
   if(uvvmv=='UV'){
@@ -263,6 +288,8 @@ for(i in 1:length(stdnms)){
     df2<- merge(meta, smryA[,-1], by='germplasmDbId')
     #convert factors to characters
     df2[,c(1:7)] <- lapply(df2[,c(1:7)], as.character)
+    #count number of rows
+    nrowdf2<- nrow(df2)
     
     #add means, MSE, LSD, and CV
     df2<- addRows(df2, 7, "MEAN", Means)
@@ -270,11 +297,34 @@ for(i in 1:length(stdnms)){
     df2<- addRows(df2, 7, "LSD", LSDs)
     df2<- addRows(df2, 7, "CV", SE/Means *100)
     df2[,-c(1:7)]<- round(df2[,-c(1:7)],3)
+  
+    #add the number of replicates
+    nrep<-c()
+    for(k in 1:length(ttrt)){
+      tb<- table(na.omit(trl[,c('germplasmDbId', ttrt[k])])[,1])
+      tb[which(tb==0)]<- NA
+      nrep<- append(nrep, mean(tb, na.rm=T))
+    }
+    df2<- addRows(df2, 7, "No. of Reps", nrep)
+    df2[,-c(1:7)]<- round(df2[,-c(1:7)],3)
     
-
+    #add rankings
+    df2rnk<- df2[, ttrt]
+    for(k in 1:ncol(df2rnk)){
+      const<- 1
+      if(ttrt[k] %in% c("Grain.test.weight...lbs.bu", "Grain.yield...bu.ac") ){
+        const<- -1
+      }
+      rnk<- rank(df2rnk[,k]*const)
+      rnk[which(is.na(df2rnk[,k]))]<- NA
+    df2rnk[,k]<- rnk
+    }
+    colnames(df2rnk)<- paste(colnames(df2rnk), "Rank", sep="-")
+    df3<- cbind(df2, df2rnk)
+    df3<- df3[,c(colnames(df3)[1:7], sort(colnames(df3[,-c(1:7)])))]
     
     #write to an excel sheet
-    excellist<- list(results=df2, rawdata=trl)
+    excellist<- list(results=df3, rawdata=trl)
     WriteXLS::WriteXLS(excellist, ExcelFileName=paste(stdnms[i], ".xls", sep=""), SheetNames=c('results', 'rawdata'))
   }  
 
