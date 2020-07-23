@@ -4,6 +4,21 @@ library(asremlPlus)
 library(reshape)
 data<- read.csv('All 2018-2020 data as of July 21 2020.csv', as.is=TRUE)
 
+#sort plot no within trial
+data<- data[order(data$plotNumber),]
+data<- data[order(data$studyName),]
+
+#subset the cooperatives for now
+#rowixCoop<- grep(c("A6S|P6S|A5S|P5S|SU|UE|VT"), data$studyName)
+#data<- data[rowixCoop,]
+
+#make vector of ids that were submitted to cooperatives
+coopgids<- c("14-28444","14-28468","14-28307",
+  "15-23803","07-19334","07-4415","02-18228",
+  "15-2639","15-4957","15-17909","15-30529",
+  "14-DC-64-95-118","15-27270","14-11830",
+  "14-28462","12-17257", "13-20616")
+
 ############################
 ##Data corrections
 ############################
@@ -78,7 +93,7 @@ studgrpExp<- c("Pr[0-9]_Car_19","Pr[0-9]_Stj_19","Pr[0-9]_Rid_18","Pr[0-9]_Stj_1
 for(x in 1:length(studgrpExp)){
   
   #get the study names and row positions of the study group
-  studGrp<- unique(data[grep(c(studgrpExp[x]), data$studyName),'studyName'])
+  studGrp<- unique(data[grep(c(studgrpExp[x]), data$studyName, fixed=FALSE),'studyName'])
   ixgrp<- which(data$studyName %in% studGrp)
   stdNms<- data[ixgrp,'studyName']
   
@@ -288,15 +303,21 @@ for(i in 1:length(stdnms)){
     df2<- merge(meta, smryA[,-1], by='germplasmDbId')
     #convert factors to characters
     df2[,c(1:7)] <- lapply(df2[,c(1:7)], as.character)
+    #add the IL to Illinois names
+    df2$germplasmName[which(df2$germplasmName %in% coopgids)]<- paste("IL", df2$germplasmName[which(df2$germplasmName %in% coopgids)], sep="")
+    trl$germplasmName[which(trl$germplasmName %in% coopgids)]<- paste("IL", trl$germplasmName[which(trl$germplasmName %in% coopgids)], sep="")
+    #re-order the rows according to the raw data
+    trl1<- trl[which(trl$blockNumber==1),]
+    df2<- df2[match(trl1$germplasmName,df2$germplasmName),]
+
     #count number of rows
     nrowdf2<- nrow(df2)
     
-    #add means, MSE, LSD, and CV
+    #add means, SE, LSD, and CV
     df2<- addRows(df2, 7, "MEAN", Means)
     df2<- addRows(df2, 7, "SE", SE)
     df2<- addRows(df2, 7, "LSD", LSDs)
-    df2<- addRows(df2, 7, "CV", SE/Means *100)
-    df2[,-c(1:7)]<- round(df2[,-c(1:7)],3)
+    df2[,-c(1:7)]<- round(df2[,-c(1:7)],2)
   
     #add the number of replicates
     nrep<-c()
@@ -306,7 +327,10 @@ for(i in 1:length(stdnms)){
       nrep<- append(nrep, mean(tb, na.rm=T))
     }
     df2<- addRows(df2, 7, "No. of Reps", nrep)
-    df2[,-c(1:7)]<- round(df2[,-c(1:7)],3)
+    df2[,-c(1:7)]<- round(df2[,-c(1:7)],2)
+    
+    #add CV
+    df2<- addRows(df2, 7, "CV", round(sqrt(nrep)*SE / Means *100,1))
     
     #add rankings
     df2rnk<- df2[, ttrt]
@@ -315,17 +339,21 @@ for(i in 1:length(stdnms)){
       if(ttrt[k] %in% c("Grain.test.weight...lbs.bu", "Grain.yield...bu.ac") ){
         const<- -1
       }
-      rnk<- rank(df2rnk[,k]*const)
-      rnk[which(is.na(df2rnk[,k]))]<- NA
-    df2rnk[,k]<- rnk
+      rnk<- rank(df2rnk[1:nrowdf2,k]*const, ties.method='min')
+      rnk[which(is.na(df2rnk[1:nrowdf2,k]))]<- NA
+    df2rnk[,k]<- c(rnk, rep(NA, nrow(df2)-nrowdf2)) 
     }
     colnames(df2rnk)<- paste(colnames(df2rnk), "Rank", sep="-")
     df3<- cbind(df2, df2rnk)
     df3<- df3[,c(colnames(df3)[1:7], sort(colnames(df3[,-c(1:7)])))]
+
+    #rename rank cols
+    colnames(df3)[grep("Rank", colnames(df3))]<- 'rank'
     
     #write to an excel sheet
     excellist<- list(results=df3, rawdata=trl)
-    WriteXLS::WriteXLS(excellist, ExcelFileName=paste(stdnms[i], ".xls", sep=""), SheetNames=c('results', 'rawdata'))
+    WriteXLS::WriteXLS(excellist, ExcelFileName=paste(stdnms[i], ".xls", sep=""), 
+                       SheetNames=c('results', 'rawdata'))
   }  
 
   #################################
