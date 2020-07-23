@@ -1,8 +1,12 @@
-setwd("~/Documents/GitHub/Wheat-Selection-Decisons-2020")
+#setwd("~/Documents/GitHub/Wheat-Selection-Decisons-2020")
 library(asreml)
 library(asremlPlus)
 library(reshape)
 data<- read.csv('All 2018-2020 data as of July 21 2020.csv', as.is=TRUE)
+
+#exclude the Y3N and Y4N for now
+rowixY3Y4<- grep(c("Y3N|Y4N"), data$studyName)
+data<- data[-rowixY3Y4,]
 
 #sort plot no within trial
 data<- data[order(data$plotNumber),]
@@ -11,6 +15,10 @@ data<- data[order(data$studyName),]
 #subset the cooperatives for now
 #rowixCoop<- grep(c("A6S|P6S|A5S|P5S|SU|UE|VT"), data$studyName)
 #data<- data[rowixCoop,]
+
+#subset the Aug for now
+rowixAug<- grep(c("Aug"), data$studyName)
+data<- data[rowixAug,]
 
 #make vector of ids that were submitted to cooperatives
 coopgids<- c("14-28444","14-28468","14-28307",
@@ -141,7 +149,7 @@ stdnmsCoop<- stdnms[grep(c("A6S|P6S|SU|UE|VT"), stdnms)]
 stdnmsAug<- stdnms[grep(c("Aug"), stdnms)]
 
 #exclude augmented studies for now
-stdnms<- setdiff(stdnms, stdnmsAug)
+#stdnms<- setdiff(stdnms, stdnmsAug)
 
 for(i in 1:length(stdnms)){
   
@@ -239,10 +247,10 @@ for(i in 1:length(stdnms)){
     if(class(rform)=='logical'){
       mod<- suppressWarnings(asreml(fixed=fxform, residual=~id(units):us(trait), data=trl, trace=FALSE, aom=T))
     }else{
-      mod<- suppressWarnings(asreml(fixed=fxform, random=rform, residual=~id(units):us(trait), data=trl, trace=FALSE, aom=T, workspace=64e6))
+      mod<- suppressWarnings(asreml(fixed=fxform, random=rform, residual=~id(units):us(trait), data=trl, trace=FALSE, aom=T))
     }
     mod<- mkConv(mod)
-    p<- suppressWarnings(predictPlus(mod, classify = clasfy, meanLSD.type='factor.combination', LSDby = 'trait', pworkspace=64e8))
+    p<- suppressWarnings(predictPlus(mod, classify = clasfy, meanLSD.type='factor.combination', LSDby = 'trait'))
 
   }
   if(uvvmv=='UV'){
