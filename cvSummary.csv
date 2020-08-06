@@ -1,0 +1,15 @@
+"","trait","20","19","18"
+"1","FHB.DON.content...ppm.",NA,22.7544074823213,NA
+"2","FHB.grain.incidence.....",48.1680980294357,24.5404593279888,NA
+"3","FHB.incidence.....",18.4461377375006,13.2257763616633,NA
+"4","FHB.plant.response...1.9.response.scale.",21.7127694210887,NA,NA
+"5","FHB.severity.....",23.3532158080998,25.5111430786156,NA
+"6","Frost.damage...0.3.injury.scale.",23.2210081695073,NA,NA
+"7","Grain.test.weight...lbs.bu",1.40595642543908,1.75132950274494,1.22763222462208
+"8","Grain.yield...bu.ac",6.70997069268538,10.9125824219359,5.2929404396263
+"9","Heading.time...Julian.date..JD..",0.549083574661929,0.733521629755009,0.260639824579097
+"10","Lodging.incidence...0.9.percentage.scale.",61.5586876054632,NA,41.8115103820937
+"11","Plant.height.inches",2.70622049917733,4.38905049036177,2.02908903893203
+"12","SBMV",12.0096974755165,NA,NA
+"13","Septoria.nodorum.leaf.blotch.severity...0.9.percentage.scale.",15.2565801085997,27.769610628382,47.503174478771
+"14","Winter.kill.damage.....",NA,73.0028031539974,NA
