@@ -120,7 +120,7 @@ convTwt<- function(y){
 ############################
 
 #treat prelims from before 2020 as one trial with separate blocks in the un-replicated sites
-studgrpExp<- c("Pr[0-9]_Car_19","Pr[0-9]_Stj_19","Pr[0-9]_Rid_18","Pr[0-9]_Stj_18",
+studgrpExp<- c("Pr[0-9]_Car_19","Pr[0-9]_Stj_19","Pr[0-9]_Rid_18", "Pr[0-9]_Neo_18", "Pr[0-9]_Stj_18",
                "Pr[0-9]_Urb_18","Pr[0-9]_Urb_19", "Pr[0-9]_Scb_19")
 for(x in 1:length(studgrpExp)){
   

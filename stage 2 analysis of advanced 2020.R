@@ -81,7 +81,6 @@ ixadv19<- which(wide$name %in% unique(df[which(df$studyName == 'Adv_Urb_19'),'na
 ixadv20<- which(wide$name %in% unique(df[which(df$studyName == 'Adv_Urb_20'),'name']))
 lines<- wide2[ixadv20[-which(ixadv20 %in% ixadv19)],1]
 lines<- setdiff(lines, 'Pio25R74')
-
 wide2<- wide2[match(lines, wide2[,1]),]
 
 #matrix
